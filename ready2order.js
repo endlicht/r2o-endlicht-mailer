@@ -74,7 +74,7 @@ async function getOrders (date, cache = true) {
 		.catch(_ => [])
 
 	const items = invoices.flatMap(invoice => invoice.items)
-	const data = JSON.stringify(user)
+	const data = JSON.stringify(items)
 	fs.writeFile('items.json', data, (err) => {
 		if (err) {
 			throw err
