@@ -1,10 +1,10 @@
 const nodemailer = require('nodemailer')
 
-function sendMail (receiverEmailAddress, title, body) {
+async function sendMail (receiverEmailAddress, title, body) {
 	const transporter = nodemailer.createTransport({
 		host: process.env.MAIL_HOST,
 		port: process.env.MAIL_PORT,
-		secure: true,
+		secure: process.env.MAIL_PORT === 465,
 		auth: {
 			user: process.env.MAIL_USERNAME,
 			pass: process.env.MAIL_PASSWORD
@@ -12,13 +12,13 @@ function sendMail (receiverEmailAddress, title, body) {
 	})
 
 	const message = {
-		from: process.env.ADDRESS,
-		to: receiverEmailAddress,
+		from: process.env.MAIL_ADDRESS,
+		to: process.env.MAIL_RECEIVER ?? receiverEmailAddress,
 		subject: title,
 		html: body
 	}
 
-	transporter.sendMail(message)
+	return transporter.sendMail(message)
 }
 
 module.exports.sendMail = sendMail

@@ -6,20 +6,26 @@ const express = require('express')
 const app = express()
 
 /* import ready2order helper */
-const { auth, grant, getOrders } = require('./ready2order')
+const { auth, grant, getOrders, orderMapper, revoke, countOrders, countedOrdersToHTML } = require('./ready2order')
 const moment = require('moment')
+const { sendMail } = require('./mail')
 
 const baseUrl = ({ headers }) => headers['x-forwarded-host'] ?? headers.host
 
 /* standard page */
 app.get('/', (req, res) => {
-	res.send('Call ' + baseUrl(req) + '/register')
+	res.send('Call <a href="http://' + baseUrl(req) + '/auth">' + baseUrl(req) + '/auth</a>')
 })
 
 /* register this app at r2o */
-app.get('/register', async (req, res) => {
+app.get('/auth', async (req, res) => {
 	const grantAccessUri = await auth(process.env.DEVELOPER_TOKEN, 'http://' + baseUrl(req) + '/granted')
 	res.redirect(grantAccessUri)
+})
+
+/* revoke access */
+app.get('/revoke', async (_req, res) => {
+	res.send(await revoke() ? 'Successfully logged out' : 'Failed logging out')
 })
 
 /* grant access to r2o */
@@ -32,8 +38,40 @@ app.get('/granted', (req, res) => {
 	}
 })
 
+/* get all orders */
 app.get('/orders', async (_req, res) => {
-	res.json(await getOrders(moment().format('YYYY-MM-DD')))
+	res.json(orderMapper(
+		await getOrders(moment().format('YYYY-MM-DD')))
+	)
+})
+
+app.get('/countOrders', async (_req, res) => {
+	res.json(countOrders(
+		orderMapper(
+			await getOrders(moment().format('YYYY-MM-DD'), true)
+		)
+	))
+})
+
+app.get('/countOrdersAsHtml', async (_req, res) => {
+	res.send(countedOrdersToHTML(
+		countOrders(
+			orderMapper(
+				await getOrders(moment().format('YYYY-MM-DD'), true)
+			)
+		)
+	))
+})
+
+app.get('/sendOrdersPerMail', async (_req, res) => {
+	const countedOrders = countedOrdersToHTML(
+		countOrders(
+			orderMapper(
+				await getOrders(moment().format('YYYY-MM-DD'), true)
+			)
+		)
+	)
+	res.json(await sendMail('jo391mue@htwg-konstanz.de', 'Endlicht Bestellungen', countedOrders))
 })
 
 app.listen(8080)
