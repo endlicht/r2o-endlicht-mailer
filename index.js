@@ -71,7 +71,7 @@ app.get('/sendOrdersPerMail', async (_req, res) => {
 			)
 		)
 	)
-	res.json(await sendMail('jo391mue@htwg-konstanz.de', 'Endlicht Bestellungen', countedOrders))
+	res.json(await sendMail('', 'Endlicht Bestellungen', countedOrders))
 })
 
 app.listen(8080)
