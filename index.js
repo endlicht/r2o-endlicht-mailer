@@ -6,7 +6,16 @@ const express = require('express')
 const app = express()
 
 /* import ready2order helper */
-const { auth, grant, getOrders, orderMapper, revoke, countOrders, countedOrdersToHTML } = require('./ready2order')
+const {
+	auth,
+	grant,
+	getOrders,
+	orderMapper,
+	revoke,
+	countOrders,
+	countedOrdersToHTML,
+	registerWebhook
+} = require('./ready2order')
 const moment = require('moment')
 const { sendMail } = require('./mail')
 
@@ -19,8 +28,14 @@ app.get('/', (req, res) => {
 
 /* register this app at r2o */
 app.get('/auth', async (req, res) => {
-	const grantAccessUri = await auth(process.env.DEVELOPER_TOKEN, 'http://' + baseUrl(req) + '/granted')
-	res.redirect(grantAccessUri)
+	const grantAccessResponse = await auth(process.env.DEVELOPER_TOKEN, 'http://' + baseUrl(req) + '/granted')
+	if (grantAccessResponse === true) {
+		/* already authorized */
+		res.redirect('http://' + baseUrl(req) + '/orders')
+		return
+	}
+	/* grantAccessResponse is a callback url */
+	res.redirect(grantAccessResponse)
 })
 
 /* revoke access */
@@ -72,6 +87,10 @@ app.get('/sendOrdersPerMail', async (_req, res) => {
 		)
 	)
 	res.json(await sendMail('', 'Endlicht Bestellungen', countedOrders))
+})
+
+app.get('/registerWebhook', async (req, res) => {
+	res.json(await registerWebhook(baseUrl(req)) ? 'Webhook registered' : 'Webhook registration failed')
 })
 
 app.listen(8080)

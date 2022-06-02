@@ -10,9 +10,30 @@ const apiUrl = 'https://api.ready2order.com/v1'
  *
  * @param devToken developer token (should be kept secret)
  * @param callbackUrl
- * @returns {Promise<*>}
+ * @returns {Promise<*>|true}
  */
 async function auth (devToken, callbackUrl) {
+	/* check if accountToken is still valid */
+
+	try {
+		global.accountToken = fs.readFileSync('auth.token', 'utf8')
+		console.log('Account token is loaded from file.')
+		const res = await axios
+			.get(apiUrl + '/users', {
+				headers: createHeader()
+			})
+			.then(_ => true)
+			.catch(_ => false)
+
+		if (res) {
+			console.log('Account token is still valid.')
+			return true
+		}
+	} catch {
+		/* ignore */
+	}
+
+	/* request access token */
 	const grantAccessResponse = await axios
 		.post(authUrl, {
 			authorizationCallbackUri: callbackUrl
@@ -29,6 +50,7 @@ async function auth (devToken, callbackUrl) {
 	/* get access token and callback uri */
 	const { grantAccessToken, grantAccessUri } = grantAccessResponse
 	global.grantAccessToken = grantAccessToken
+	console.log('GrantAccessToken: ' + grantAccessToken)
 	return grantAccessUri
 }
 
@@ -60,7 +82,7 @@ async function revoke () {
  * @param url
  * @returns {boolean}
  */
-function grant (url) {
+async function grant (url) {
 	const parsedUrl = new URL(url)
 	const params = parsedUrl.searchParams
 	const status = params.get('status')
@@ -73,7 +95,50 @@ function grant (url) {
 
 	/* get account token and store it in global variable */
 	global.accountToken = params.get('accountToken')
+
+	fs.writeFile('auth.token', global.accountToken, (err) => {
+		if (err) {
+			throw err
+		}
+		console.log('Account token is saved locally.')
+	})
+
+	console.log('Account token: ' + global.accountToken)
 	return true
+}
+
+/**
+ * Creates the header for the r2o API.
+ * @returns {{Authorization: string, Accept: string, "User-Agent": string, "Content-Type": string}}
+ */
+function createHeader () {
+	return {
+		Authorization: 'Bearer ' + global.accountToken,
+		Accept: 'application/json',
+		'Content-Type': 'application/json',
+		'User-Agent': 'r2o-order-mailer (github.com/jpkmiller)'
+	}
+}
+
+/**
+ * Register webhooks to r2o API.
+ * @param url
+ */
+function registerWebhook (url) {
+	return axios
+		.post(apiUrl + '/webhook', {
+			webhookUrl: url + '/webhook'
+		}, {
+			headers: createHeader()
+		})
+		.then(_ => {
+			console.log('Webhook registered.')
+			return true
+		})
+		.catch(_ => {
+			console.log('Webhook registration failed.')
+			return false
+		})
 }
 
 /**
@@ -85,17 +150,16 @@ function grant (url) {
  */
 async function getOrders (date, fromCache = false) {
 	if (fromCache) {
-		return JSON.parse(fs.readFileSync('items.json', 'utf8'))
+		try {
+			return JSON.parse(fs.readFileSync('items.json', 'utf8'))
+		} catch {
+			/* ignore */
+		}
 	}
 
 	const invoices = await axios
-		.get(apiUrl + '/document/invoice?items=true&payments=false&dateFrom' + date ?? '', {
-			headers: {
-				Authorization: 'Bearer ' + global.accountToken,
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-				'User-Agent': 'r2o-order-mailer (github.com/jpkmiller)'
-			}
+		.get(apiUrl + '/document/invoice?&testMode=false&items=true&discounts=false&payments=false&dateFrom=' + date ?? '', {
+			headers: createHeader()
 		})
 		.then(r => r.data.invoices)
 		.catch(_ => [])
@@ -105,7 +169,7 @@ async function getOrders (date, fromCache = false) {
 		if (err) {
 			throw err
 		}
-		console.log('JSON data is saved.')
+		console.log('Saving orders locally.')
 	})
 	return items
 }
@@ -136,11 +200,11 @@ function countOrders (orders) {
 	const ordersCounter = {}
 	orders.forEach(order => {
 		let cleanedItemName = order.name
-		let increment = true
+		let increment = 1
 
 		/* if “zurück” is found then decrement */
 		if (cleanedItemName.includes('zurück')) {
-			increment = false
+			increment = -1
 			cleanedItemName = cleanedItemName.split('zurück')[0].trim()
 		}
 
@@ -150,7 +214,7 @@ function countOrders (orders) {
 		}
 
 		/* increment or decrement amount depending on state */
-		ordersCounter[cleanedItemName] = increment ? ordersCounter[cleanedItemName] + order.quantity : ordersCounter[cleanedItemName] - order.quantity
+		ordersCounter[cleanedItemName] += order.quantity * increment
 	})
 	return ordersCounter
 }
@@ -171,6 +235,7 @@ function countedOrdersToHTML (countedOrders) {
 module.exports.auth = auth
 module.exports.revoke = revoke
 module.exports.grant = grant
+module.exports.registerWebhook = registerWebhook
 module.exports.getOrders = getOrders
 module.exports.orderMapper = orderMapper
 module.exports.countOrders = countOrders
